@@ -19,6 +19,8 @@ class ESM2(nn.Module):
         attention_heads: int = 20,
         alphabet: Union[esm.data.Alphabet, str] = "ESM-1b",
         token_dropout: bool = True,
+        shard_model: bool = False,
+
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -35,6 +37,7 @@ class ESM2(nn.Module):
         self.prepend_bos = alphabet.prepend_bos
         self.append_eos = alphabet.append_eos
         self.token_dropout = token_dropout
+        self.shard_model = shard_model
 
         self._init_submodules()
 
@@ -46,9 +49,24 @@ class ESM2(nn.Module):
             padding_idx=self.padding_idx,
         )
 
-        self.layers = nn.ModuleList(
-            [
-                TransformerLayer(
+
+        if self.shard_model:
+            if torch.cuda.device_count() <= 1:
+                raise Exception(f'Cannot shard the model while having {torch.cuda.device_count()}')
+            
+            
+            self.num_gpus = torch.cuda.device_count()
+            num_layers_per_gpu = self.num_layers // self.num_gpus
+            
+            self.num_layers_per_gpu = [num_layers_per_gpu * i for i in range(1, self.num_gpus + 1)]
+            current_gpu = 0
+            current_device = 'cuda:{current_gpu}'.format(current_gpu=current_gpu)
+
+
+        self.layers = nn.ModuleList()
+
+        for i in range(self.num_layers):
+            transformer_layer = TransformerLayer(
                     self.embed_dim,
                     4 * self.embed_dim,
                     self.attention_heads,
@@ -56,9 +74,29 @@ class ESM2(nn.Module):
                     use_esm1b_layer_norm=True,
                     use_rotary_embeddings=True,
                 )
-                for _ in range(self.num_layers)
-            ]
-        )
+            
+            if self.shard_model:
+                if i > self.num_layers_per_gpu[current_gpu] and current_gpu < self.num_gpus:
+                    current_gpu += 1
+                    current_device = 'cuda:{current_gpu}'.format(current_gpu=current_gpu)
+                transformer_layer.to(device=current_device)
+
+            self.layers.append(transformer_layer)
+        
+        
+        # self.layers = nn.ModuleList(
+        #     [
+        #         TransformerLayer(
+        #             self.embed_dim,
+        #             4 * self.embed_dim,
+        #             self.attention_heads,
+        #             add_bias_kv=False,
+        #             use_esm1b_layer_norm=True,
+        #             use_rotary_embeddings=True,
+        #         )
+        #         for _ in range(self.num_layers)
+        #     ]
+        # )
 
         self.contact_head = ContactPredictionHead(
             self.num_layers * self.attention_heads,
@@ -66,6 +104,7 @@ class ESM2(nn.Module):
             self.append_eos,
             eos_idx=self.eos_idx,
         )
+
         self.emb_layer_norm_after = ESM1bLayerNorm(self.embed_dim)
 
         self.lm_head = RobertaLMHead(
@@ -73,6 +112,12 @@ class ESM2(nn.Module):
             output_dim=self.alphabet_size,
             weight=self.embed_tokens.weight,
         )
+
+        if self.shard_model:
+            self.contact_head.to(device=current_device)
+            self.emb_layer_norm_after.to(device=current_device)
+            self.lm_head.to(current_device)
+
 
     def forward(self, tokens, repr_layers=[], need_head_weights=False, return_contacts=False):
         if return_contacts:
@@ -108,7 +153,18 @@ class ESM2(nn.Module):
         if not padding_mask.any():
             padding_mask = None
 
+        current_gpu = 0
+
         for layer_idx, layer in enumerate(self.layers):
+            if self.shard_model:
+                if layer_idx > self.num_layers_per_gpu[current_gpu] and current_gpu < self.num_gpus:
+                    current_gpu += 1
+                    current_device = 'cuda:{current_gpu}'.format(current_gpu=current_gpu)
+                
+                x = x.to(device=current_device)
+                if padding_mask is not None:
+                    padding_mask = padding_mask.to(device=current_device)
+
             x, attn = layer(
                 x,
                 self_attn_padding_mask=padding_mask,
@@ -119,6 +175,7 @@ class ESM2(nn.Module):
             if need_head_weights:
                 # (H, B, T, T) => (B, H, T, T)
                 attn_weights.append(attn.transpose(1, 0))
+
 
         x = self.emb_layer_norm_after(x)
         x = x.transpose(0, 1)  # (T, B, E) => (B, T, E)

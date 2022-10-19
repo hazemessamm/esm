@@ -59,9 +59,9 @@ def _download_model_and_regression_data(model_name):
     return model_data, regression_data
 
 
-def load_model_and_alphabet_hub(model_name):
+def load_model_and_alphabet_hub(model_name, shard_model: bool = False):
     model_data, regression_data = _download_model_and_regression_data(model_name)
-    return load_model_and_alphabet_core(model_name, model_data, regression_data)
+    return load_model_and_alphabet_core(model_name, model_data, regression_data, shard_model=shard_model)
 
 
 def load_model_and_alphabet_local(model_location):
@@ -161,7 +161,7 @@ def _load_model_and_alphabet_core_v1(model_data):
     return model, alphabet, model_state
 
 
-def _load_model_and_alphabet_core_v2(model_data):
+def _load_model_and_alphabet_core_v2(model_data, shard_model=False):
     def upgrade_state_dict(state_dict):
         """Removes prefixes 'model.encoder.sentence_encoder.' and 'model.encoder.'."""
         prefixes = ["encoder.sentence_encoder.", "encoder."]
@@ -173,22 +173,24 @@ def _load_model_and_alphabet_core_v2(model_data):
     state_dict = model_data["model"]
     state_dict = upgrade_state_dict(state_dict)
     alphabet = esm.data.Alphabet.from_architecture("ESM-1b")
+
     model = ESM2(
         num_layers=cfg.encoder_layers,
         embed_dim=cfg.encoder_embed_dim,
         attention_heads=cfg.encoder_attention_heads,
         alphabet=alphabet,
         token_dropout=cfg.token_dropout,
+        shard_model=shard_model
     )
     return model, alphabet, state_dict
 
 
-def load_model_and_alphabet_core(model_name, model_data, regression_data=None):
+def load_model_and_alphabet_core(model_name, model_data, regression_data=None, shard_model: bool = False):
     if regression_data is not None:
         model_data["model"].update(regression_data["model"])
 
     if model_name.startswith("esm2"):
-        model, alphabet, model_state = _load_model_and_alphabet_core_v2(model_data)
+        model, alphabet, model_state = _load_model_and_alphabet_core_v2(model_data, shard_model=shard_model)
     else:
         model, alphabet, model_state = _load_model_and_alphabet_core_v1(model_data)
 
@@ -387,11 +389,11 @@ def esm2_t36_3B_UR50D():
     return load_model_and_alphabet_hub("esm2_t36_3B_UR50D")
 
 
-def esm2_t48_15B_UR50D():
+def esm2_t48_15B_UR50D(shard_model: bool = False):
     """48 layer ESM-2 model with 15B params, trained on UniRef50.
     If you have OOM while loading this model, please refer to README
     on how to employ FSDP and ZeRO CPU offloading
 
     Returns a tuple of (Model, Alphabet).
     """
-    return load_model_and_alphabet_hub("esm2_t48_15B_UR50D")
+    return load_model_and_alphabet_hub("esm2_t48_15B_UR50D", shard_model=shard_model)
