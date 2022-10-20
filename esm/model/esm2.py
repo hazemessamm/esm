@@ -19,7 +19,7 @@ class ESM2(nn.Module):
         attention_heads: int = 20,
         alphabet: Union[esm.data.Alphabet, str] = "ESM-1b",
         token_dropout: bool = True,
-        shard_model: bool = False,
+        shard_model: bool = True,
 
     ):
         super().__init__()
@@ -61,8 +61,8 @@ class ESM2(nn.Module):
             self.num_layers_per_gpu = [num_layers_per_gpu * i for i in range(1, self.num_gpus + 1)]
             current_gpu = 0
             current_device = 'cuda:{current_gpu}'.format(current_gpu=current_gpu)
-
-
+            self.embed_tokens.to(device=current_device)
+            
         self.layers = nn.ModuleList()
 
         for i in range(self.num_layers):
@@ -116,7 +116,7 @@ class ESM2(nn.Module):
         if self.shard_model:
             self.contact_head.to(device=current_device)
             self.emb_layer_norm_after.to(device=current_device)
-            self.lm_head.to(current_device)
+            self.lm_head.to(device=self.embed_tokens.weight.device)
 
 
     def forward(self, tokens, repr_layers=[], need_head_weights=False, return_contacts=False):
@@ -154,7 +154,7 @@ class ESM2(nn.Module):
             padding_mask = None
 
         current_gpu = 0
-
+        current_device = 'cuda:{current_gpu}'.format(current_gpu=current_gpu)
         for layer_idx, layer in enumerate(self.layers):
             if self.shard_model:
                 if layer_idx > self.num_layers_per_gpu[current_gpu] and current_gpu < self.num_gpus:
@@ -183,11 +183,20 @@ class ESM2(nn.Module):
         # last hidden representation should have layer norm applied
         if (layer_idx + 1) in repr_layers:
             hidden_representations[layer_idx + 1] = x
-        x = self.lm_head(x)
+        
+        if self.shard_model:
+            x = x.to(device=self.embed_tokens.weight.device)
+            x = self.lm_head(x)
+            x = x.to(device=current_device)
+        else:
+            x = self.lm_head(x)
 
         result = {"logits": x, "representations": hidden_representations}
         if need_head_weights:
             # attentions: B x L x H x T x T
+            if self.shard_model:
+                for i, aw in enumerate(attn_weights):
+                    attn_weights[i] = aw.to(device=current_device)
             attentions = torch.stack(attn_weights, 1)
             if padding_mask is not None:
                 attention_mask = 1 - padding_mask.type_as(attentions)
