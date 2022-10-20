@@ -373,20 +373,20 @@ def esm2_t30_150M_UR50D():
     return load_model_and_alphabet_hub("esm2_t30_150M_UR50D")
 
 
-def esm2_t33_650M_UR50D():
+def esm2_t33_650M_UR50D(shard_model: bool = False):
     """33 layer ESM-2 model with 650M params, trained on UniRef50.
 
     Returns a tuple of (Model, Alphabet).
     """
-    return load_model_and_alphabet_hub("esm2_t33_650M_UR50D")
+    return load_model_and_alphabet_hub("esm2_t33_650M_UR50D", shard_model=shard_model)
 
 
-def esm2_t36_3B_UR50D():
+def esm2_t36_3B_UR50D(shard_model: bool = False):
     """36 layer ESM-2 model with 3B params, trained on UniRef50.
 
     Returns a tuple of (Model, Alphabet).
     """
-    return load_model_and_alphabet_hub("esm2_t36_3B_UR50D")
+    return load_model_and_alphabet_hub("esm2_t36_3B_UR50D", shard_model=shard_model)
 
 
 def esm2_t48_15B_UR50D(shard_model: bool = False):

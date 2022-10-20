@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from typing import Union
+import warnings
 import torch
 import torch.nn as nn
 
@@ -52,11 +53,18 @@ class ESM2(nn.Module):
 
         if self.shard_model:
             if torch.cuda.device_count() <= 1:
-                raise Exception(f'Cannot shard the model while having {torch.cuda.device_count()}')
+                raise Exception(f'Cannot shard the model while having {torch.cuda.device_count()} GPU/s. At least 2 GPUs should be available.')
             
             
             self.num_gpus = torch.cuda.device_count()
             num_layers_per_gpu = self.num_layers // self.num_gpus
+
+
+            if num_layers_per_gpu < 1:
+                warnings.warn(f'Number of GPUs is more than the number of layers. Number of GPUs that will be taken is {self.num_layers} out of {self.num_gpus}.')
+                self.num_gpus = self.num_layers
+                num_layers_per_gpu = 1
+
             
             self.num_layers_per_gpu = [num_layers_per_gpu * i for i in range(1, self.num_gpus + 1)]
             current_gpu = 0
