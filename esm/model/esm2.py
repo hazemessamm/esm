@@ -53,7 +53,7 @@ class ESM2(nn.Module):
 
         if self.shard_model:
             if torch.cuda.device_count() <= 1:
-                raise Exception(f'Cannot shard the model while having {torch.cuda.device_count()} GPU/s. At least 2 GPUs should be available.')
+                raise Exception(f'Cannot shard the model while having {torch.cuda.device_count()} GPU. At least 2 GPUs should be available.')
             
             
             self.num_gpus = torch.cuda.device_count()
@@ -61,7 +61,7 @@ class ESM2(nn.Module):
 
 
             if num_layers_per_gpu < 1:
-                warnings.warn('Number of GPUs is more than the number of layers. '
+                warnings.warn('Number of GPUs are more than the number of layers. '
                               f'Number of GPUs that will be taken is {self.num_layers} out of {self.num_gpus}.')
                 self.num_gpus = self.num_layers
                 num_layers_per_gpu = 1
