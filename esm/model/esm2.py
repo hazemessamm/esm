@@ -61,7 +61,8 @@ class ESM2(nn.Module):
 
 
             if num_layers_per_gpu < 1:
-                warnings.warn(f'Number of GPUs is more than the number of layers. Number of GPUs that will be taken is {self.num_layers} out of {self.num_gpus}.')
+                warnings.warn('Number of GPUs is more than the number of layers. '
+                              f'Number of GPUs that will be taken is {self.num_layers} out of {self.num_gpus}.')
                 self.num_gpus = self.num_layers
                 num_layers_per_gpu = 1
 
